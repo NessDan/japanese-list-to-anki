@@ -1,0 +1,6 @@
+collection.media/
+node_modules/
+wordlist.txt
+warn.txt
+error.txt
+output.txt

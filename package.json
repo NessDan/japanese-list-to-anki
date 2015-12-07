@@ -1,0 +1,20 @@
+{
+  "name": "japanese-list-to-anki",
+  "version": "1.0.0",
+  "description": "Turns a list of Japanese words to an Anki-importable text file.",
+  "main": "index.js",
+  "keywords": [
+    "node",
+    "node.js",
+    "japanese",
+    "anki"
+  ],
+  "author": {
+    "name": "Daniel Kaspo",
+    "email": "danielkaspo@gmail.com"
+  },
+  "dependencies": {
+    "async": "^1.5.0",
+    "request": "^2.67.0"
+  }
+}
