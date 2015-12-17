@@ -389,6 +389,16 @@ function warn(message) {
     fs.appendFile('warn.txt', message + "\r\n");
 }
 
+// Clear the output and error files on load
+fs.writeFileSync('output.txt', '', {encoding: 'utf-8'});
+fs.writeFileSync('error.txt', '', {encoding: 'utf-8'});
+fs.writeFileSync('warn.txt', '', {encoding: 'utf-8'});
+fs.exists('collection.media/', function(exists) {
+    if (!exists) {
+        fs.mkdirSync('collection.media');
+    }
+});
+
 var wordFile = fs.readFile('wordlist.txt', {encoding: 'utf-8'}, function(err, data) {
     if (err) {
         error(err);
@@ -397,8 +407,3 @@ var wordFile = fs.readFile('wordlist.txt', {encoding: 'utf-8'}, function(err, da
 
     parseWordList(data);
 });
-
-// Clear the output and error files on load
-fs.writeFile('output.txt', '', {encoding: 'utf-8'});
-fs.writeFile('error.txt', '', {encoding: 'utf-8'});
-fs.writeFile('warn.txt', '', {encoding: 'utf-8'});
