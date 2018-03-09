@@ -1,9 +1,12 @@
 // TODO: When bestDef returns false, we break. That's bad, fix it.
 var
 fs = require('fs'),
-request = require('request'),
-async = require('async'),
-ankiWords = [];
+request = require('node-fetch'),
+asyncLoop = require('async'),
+queryString = require('querystring'),
+FormData = require('form-data'),
+ankiWords = [],
+timeout = 1000;
 
 function parseWordList(wordBlob) {
     function cleanQuotes(badQuotes) {
@@ -47,47 +50,41 @@ function parseWordList(wordBlob) {
         }
     }
 
-    requestWords(ankiWords);
-}
-
-function requestWords(wordList) {
-    if (wordList.length) {
-        async.each(wordList, function(item, done) {
-            requestWord(item, function(wordObject) {
-                requestAudio(wordObject, function(wordObject) {
-                    done();
-                });
-            }, done);
-        }, output);
+    if (ankiWords.length) {
+        requestWords(ankiWords);
     } else {
         error("No words to request.");
     }
 }
 
-function requestWord(wordObject, callback, done) {
+function requestWords(wordList) {
+    wordList.forEach(async (partialWordData, done) => {
+        const wordJishoData = await getWordDataFromJisho(partialWordData);
+        await getAudioForWord(wordJishoData);
+        await done();
+    }, output);
+}
+
+async function getWordDataFromJisho(wordObject) {
     var
     apiUrl = 'http://jisho.org/api/v1/search/words?keyword=',
     wordUrl = apiUrl + encodeURIComponent(wordObject.romaji),
     self = this,
     passedArgs = arguments;
 
-    request(wordUrl, function(err, res, body) {
-        if (err) {
-            error(wordObject.romaji + " request error: " + err + ". Retrying.");
-            requestWord.apply(self, passedArgs);
-        } else {
-            jishoResponseProcessor(wordObject, body, callback);
-        }
-    });
+    try {
+        console.log('requesting ' + wordObject.romaji);
+        const response = await request(wordUrl);
+        const json = await response.json();
+        return jishoResponseProcessor(wordObject, json);
+    } catch (err) {
+        error(wordObject.romaji + " request error: " + err + ". Retrying.");
+        // An error occurred, this will re-do the request.
+        // requestWord.apply(self, passedArgs);
+    }
 }
 
-function jishoResponseProcessor(wordObject, response, callback) {
-    try {
-        response = JSON.parse(response);
-    } catch(e) {
-        error('Could not parse JSON for ' + wordObject.romaji + '. ', response, e);
-    }
-
+function jishoResponseProcessor(wordObject, response) {
     if (response && response.data && response.meta && response.meta.status === 200) {
         var
         definitions = response.data,
@@ -95,58 +92,56 @@ function jishoResponseProcessor(wordObject, response, callback) {
 
         if (bestDefinition) {
             addToAnki(wordObject, bestDefinition);
-            if (typeof callback != 'undefined') {
-                callback(wordObject);
-            }
+            return wordObject;
         } else {
-            callback(wordObject);
+            return wordObject;
         }
     }
 }
 
-function requestAudio(wordObject, callback) {
+async function getAudioForWord(wordObject, callback) {
     var
-    apiUrl = 'https://www.japanesepod101.com/learningcenter/ajax_post/save_form',
-    postData = {
-        post: 'dictionary_reference',
-        match_type: 'exact',
-        search_query: wordObject.kana,
-        submit: 'Searching...',
-        vulgar: 'true',
-        '_': ''
-    };
+    apiUrl = 'https://www.japanesepod101.com/learningcenter/reference/dictionary_post';
 
-    fs.exists('collection.media/' + wordObject.romaji + '.mp3', function(exists) {
+    const form = new FormData();
+    form.append('post', 'dictionary_reference');
+    form.append('match_type', 'exact');
+    form.append('search_query', wordObject.kana);
+    form.append('vulgar', 'true');
+
+    await fs.exists('collection.media/' + wordObject.romaji + '.mp3', async function(exists) {
         if (!exists) {
-            request.post({url: apiUrl, form: postData}, function(err, res, body) {
-                jpodResponseProcessor(wordObject, body, callback);
+            const response = await request(apiUrl, {
+                method: 'POST', 
+                body: form
             });
+            const pageHTML = await response.text();
+            await jpodHTMLParser(wordObject, pageHTML);
         } else {
             wordObject.audio = '[sound:' + wordObject.romaji + '.mp3]';
-            callback(wordObject);
         }
     });
 }
 
-function jpodResponseProcessor(wordObject, response, callback) {
+async function jpodHTMLParser(wordObject, pageHTML) {
     var
-    audioIdRegex = /audiomp3.php\?id\=(\d+)/,
-    audioId,
+    audioURLRegex = /https:\/\/www.japanesepod101.com\/learningcenter\/audio\/vocabulary\/\d+.mp3/,
     audioUrl;
 
     try {
-        audioId = audioIdRegex.exec(response)[1],
-        audioUrl = 'http://assets.languagepod101.com/dictionary/japanese/audiomp3.php?id=' + audioId;
+        audioUrl = audioURLRegex.exec(pageHTML)[0];
 
-        if (audioId) {
-            request(audioUrl).pipe(fs.createWriteStream('collection.media/' + wordObject.romaji + '.mp3'));
+        if (audioUrl) {
+            const response = await request(audioUrl);
+            const body = await response.body;
+            await body.pipe(fs.createWriteStream('collection.media/' + wordObject.romaji + '.mp3'));
             wordObject.audio = '[sound:' + wordObject.romaji + '.mp3]';
         }
     } catch (e) {
         //error('Could not parse audio information for ' + wordObject.romaji);
     }
 
-    callback(wordObject);
+    return wordObject;
 }
 
 function getClosest(wordObject, definitions) {

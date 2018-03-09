@@ -15,6 +15,8 @@
   },
   "dependencies": {
     "async": "^1.5.0",
+    "form-data": "^2.3.2",
+    "node-fetch": "^2.1.1",
     "request": "^2.67.0"
   }
 }
