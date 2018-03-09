@@ -2,7 +2,7 @@
 var
 fs = require('fs'),
 request = require('node-fetch'),
-asyncLoop = require('async'),
+asyncHelper = require('async'),
 queryString = require('querystring'),
 FormData = require('form-data'),
 ankiWords = [],
@@ -58,10 +58,14 @@ function parseWordList(wordBlob) {
 }
 
 function requestWords(wordList) {
-    wordList.forEach(async (partialWordData, done) => {
-        const wordJishoData = await getWordDataFromJisho(partialWordData);
-        await getAudioForWord(wordJishoData);
-        await done();
+    asyncHelper.each(wordList, async (partialWordData, done) => {
+        try {
+            const wordJishoData = await getWordDataFromJisho(partialWordData);
+            await getAudioForWord(wordJishoData);
+            setTimeout(done, timeout);
+        } catch (err) {
+            error('failed somewhere for ' + partialWordData.romaji + ' err: ' + err);
+        }
     }, output);
 }
 
@@ -109,18 +113,26 @@ async function getAudioForWord(wordObject, callback) {
     form.append('search_query', wordObject.kana);
     form.append('vulgar', 'true');
 
-    await fs.exists('collection.media/' + wordObject.romaji + '.mp3', async function(exists) {
-        if (!exists) {
-            const response = await request(apiUrl, {
-                method: 'POST', 
-                body: form
-            });
-            const pageHTML = await response.text();
-            await jpodHTMLParser(wordObject, pageHTML);
-        } else {
-            wordObject.audio = '[sound:' + wordObject.romaji + '.mp3]';
-        }
-    });
+    try {
+        await fs.exists('collection.media/' + wordObject.romaji + '.mp3', async function(exists) {
+            if (!exists) {
+                try {
+                    const response = await request(apiUrl, {
+                        method: 'POST', 
+                        body: form
+                    });
+                    const pageHTML = await response.text();
+                    await jpodHTMLParser(wordObject, pageHTML);
+                } catch(err) {
+                    error('error getting audio for word' + wordObject.romaji + '. error: ' + err);
+                }
+            } else {
+                wordObject.audio = '[sound:' + wordObject.romaji + '.mp3]';
+            }
+        });
+    } catch(err) {
+        error('Error reading file for ' + wordObject.romaji + '. Error:' + err);
+    }
 }
 
 async function jpodHTMLParser(wordObject, pageHTML) {
@@ -132,9 +144,13 @@ async function jpodHTMLParser(wordObject, pageHTML) {
         audioUrl = audioURLRegex.exec(pageHTML)[0];
 
         if (audioUrl) {
-            const response = await request(audioUrl);
-            const body = await response.body;
-            await body.pipe(fs.createWriteStream('collection.media/' + wordObject.romaji + '.mp3'));
+            try {
+                const response = await request(audioUrl);
+                const body = await response.body;
+                await body.pipe(fs.createWriteStream('collection.media/' + wordObject.romaji + '.mp3'));
+            } catch (err) {
+                error('Error requesting MP3 file for ' + wordObject.romaji + '. error: ' + err);
+            }
             wordObject.audio = '[sound:' + wordObject.romaji + '.mp3]';
         }
     } catch (e) {
