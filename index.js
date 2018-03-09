@@ -58,11 +58,11 @@ function parseWordList(wordBlob) {
 }
 
 function requestWords(wordList) {
-    asyncHelper.each(wordList, async (partialWordData, done) => {
+    wordList.forEach(async (partialWordData) => {
         try {
             const wordJishoData = await getWordDataFromJisho(partialWordData);
             await getAudioForWord(wordJishoData);
-            setTimeout(done, timeout);
+            setTimeout(() => {}, timeout);
         } catch (err) {
             error('failed somewhere for ' + partialWordData.romaji + ' err: ' + err);
         }
