@@ -3,6 +3,7 @@ var
 fs = require('fs'),
 request = require('request'),
 async = require('async'),
+FormData = require('form-data'),
 ankiWords = [];
 
 function parseWordList(wordBlob) {
@@ -76,12 +77,12 @@ function requestWord(wordObject, callback, done) {
             error(wordObject.romaji + " request error: " + err + ". Retrying.");
             requestWord.apply(self, passedArgs);
         } else {
-            jishoResponseProcessor(wordObject, body, callback);
+            jishoResponseProcessor(wordObject, body, callback, done);
         }
     });
 }
 
-function jishoResponseProcessor(wordObject, response, callback) {
+function jishoResponseProcessor(wordObject, response, callback, done) {
     try {
         response = JSON.parse(response);
     } catch(e) {
@@ -99,33 +100,39 @@ function jishoResponseProcessor(wordObject, response, callback) {
                 callback(wordObject);
             }
         } else {
-            callback(wordObject);
+            console.error("No matching definition for word " + wordObject.romaji);
+            done();
         }
     }
 }
 
 function requestAudio(wordObject, callback) {
     var
-    apiUrl = 'https://www.japanesepod101.com/learningcenter/ajax_post/save_form',
-    postData = {
-        post: 'dictionary_reference',
-        match_type: 'exact',
-        search_query: wordObject.kana,
-        submit: 'Searching...',
-        vulgar: 'true',
-        '_': ''
-    };
+    apiUrl = 'https://www.japanesepod101.com/learningcenter/reference/dictionary_post';
 
-    fs.exists('collection.media/' + wordObject.romaji + '.mp3', function(exists) {
-        if (!exists) {
-            request.post({url: apiUrl, form: postData}, function(err, res, body) {
-                jpodResponseProcessor(wordObject, body, callback);
-            });
-        } else {
-            wordObject.audio = '[sound:' + wordObject.romaji + '.mp3]';
-            callback(wordObject);
-        }
-    });
+    const form = new FormData();
+    form.append('post', 'dictionary_reference');
+    form.append('match_type', 'exact');
+    form.append('search_query', wordObject.kana);
+    form.append('vulgar', 'true');
+
+    try {
+        fs.exists('collection.media/' + wordObject.romaji + '.mp3', function(exists) {
+            if (!exists) {
+                request.post({url: apiUrl, form: form}, function(err, res, body) {
+                    jpodResponseProcessor(wordObject, body, callback);
+                });
+            } else {
+                wordObject.audio = '[sound:' + wordObject.romaji + '.mp3]';
+                callback(wordObject);
+            }
+        });
+    } catch(err) {
+        error('Error reading file for ' + wordObject.romaji + '. Error:' + err);
+    }
+
+
+    
 }
 
 function jpodResponseProcessor(wordObject, response, callback) {
